@@ -6694,6 +6694,10 @@ check_timestamps(focus)
     int		didit = 0;
     int		n;
 
+    /* XXX AF */
+    if (focus)
+	return FALSE;
+
     /* Don't check timestamps while system() or another low-level function may
      * cause us to lose and gain focus. */
     if (no_check_timestamps > 0)

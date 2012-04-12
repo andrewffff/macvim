@@ -319,6 +319,14 @@ static struct signalinfo
     {-1,	    "Unknown!", FALSE}
 };
 
+/*
+ * Maintain a cache of the result of getcwd() - it can be very slow over
+ * a network from BSD. We rely on all changes to the cwd going through
+ * mch_chdir.
+ */
+static char_u* cached_dirname = NULL;
+
+
     int
 mch_chdir(path)
     char *path;
@@ -329,11 +337,16 @@ mch_chdir(path)
 	smsg((char_u *)"chdir(%s)", path);
 	verbose_leave();
     }
-# ifdef VMS
-    return chdir(vms_fixfilename(path));
-# else
+
+#ifdef VMS
+    /* XXX untested! */
+    path = vms_fixfilename(path);
+#endif
+
+    if (!(cached_dirname && 0 == strcmp((char*)cached_dirname, path)))
+        mch_dirname_invalidate_cache();
+
     return chdir(path);
-# endif
 }
 
 /*
@@ -2311,22 +2324,57 @@ strerror(err)
 #endif
 
 /*
+ * Invalidate cached directory information, if you require mch_dirname
+ * to detect permission changes, deletions etc
+ */
+    void
+mch_dirname_invalidate_cache()
+{
+    vim_free(cached_dirname);
+    cached_dirname = NULL;
+}
+
+
+/*
  * Get name of current directory into buffer 'buf' of length 'len' bytes.
- * Return OK for success, FAIL for failure.
+ * Return OK for success, FAIL for failure. This will not pick up ENOENT
+ * or EACCES if the current directory or its ancestors are deleted or have
+ * permissions changed - unless you call mch_dirname_invalidate_cache().
  */
     int
 mch_dirname(buf, len)
     char_u  *buf;
     int	    len;
 {
+    if (cached_dirname)
+    {
+	/* XXX error code is untested! */
+	if (len < 1)
+	{
+	    STRCPY(buf, strerror(ERANGE));
+	    return FAIL;
+	}
+
+	if (len < strlen((char*)cached_dirname)+1)
+	{
+	    STRCPY(buf, strerror(ENOMEM));
+	    return FAIL;
+	}
+
+	STRCPY(buf, cached_dirname);
+	return OK;
+    }
+
 #if defined(USE_GETCWD)
     if (getcwd((char *)buf, len) == NULL)
     {
 	STRCPY(buf, strerror(errno));
 	return FAIL;
     }
+    cached_dirname = vim_strsave(buf);
     return OK;
 #else
+    /* XXX not cached - does anyone care? */
     return (getwd((char *)buf) != NULL ? OK : FAIL);
 #endif
 }
@@ -2490,6 +2538,7 @@ mch_FullName(fname, buf, len, force)
 		    MSG("fchdir() to previous dir");
 		    verbose_leave();
 		}
+		mch_dirname_invalidate_cache();
 		l = fchdir(fd);
 		close(fd);
 	    }

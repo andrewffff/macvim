@@ -1814,8 +1814,13 @@ static void netbeansReadCallback(CFSocketRef s,
     if (numTabs < 0)
         numTabs = 0;
 
+    char dirname[MAXPATHL];
+    if (!mch_dirname((char_u*)dirname, sizeof(dirname)))
+	abort();
+
     NSDictionary *vimState = [NSDictionary dictionaryWithObjectsAndKeys:
-        [[NSFileManager defaultManager] currentDirectoryPath], @"pwd",
+        [[NSString alloc] initWithCString:dirname encoding:NSUTF8StringEncoding], @"pwd",
+//        [[NSFileManager defaultManager] currentDirectoryPath], @"pwd",
         [NSNumber numberWithInt:p_mh], @"p_mh",
         [NSNumber numberWithBool:mmta], @"p_mmta",
         [NSNumber numberWithInt:numTabs], @"numTabs",
